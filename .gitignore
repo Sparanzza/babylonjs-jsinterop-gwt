@@ -1,0 +1,13 @@
+/target/
+*.iml
+.settings
+.idea
+.classpath
+bin
+META-INF
+.checkstyle
+chromedriver.log
+.errai/
+*.versionsBackup
+.settings/
+
