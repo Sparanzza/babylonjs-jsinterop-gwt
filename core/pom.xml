@@ -22,7 +22,7 @@
                 <groupId>net.ltgt.gwt.maven</groupId>
                 <artifactId>gwt-maven-plugin</artifactId>
                 <configuration>
-                    <moduleName>com.sparanzza.babylonjs.BABYLON</moduleName>
+                    <moduleName>com.sparanzza.babylonjs.BABYLONJS</moduleName>
                     <skipModule>true</skipModule>
                 </configuration>
             </plugin>

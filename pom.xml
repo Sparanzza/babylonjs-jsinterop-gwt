@@ -8,6 +8,7 @@
     <name>babylonjs-jsinterop</name>
 
     <modules>
+        <module>ts2jsinterop</module>
         <module>core</module>
         <module>sample</module>
     </modules>
@@ -36,7 +37,6 @@
     </properties>
 
 
-
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -57,6 +57,11 @@
     </dependencyManagement>
 
     <dependencies>
+        <dependency>
+            <groupId>com.squareup</groupId>
+            <artifactId>javapoet</artifactId>
+            <version>1.10.0</version>
+        </dependency>
         <dependency>
             <groupId>com.google.gwt</groupId>
             <artifactId>gwt-user</artifactId>

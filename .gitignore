@@ -10,4 +10,7 @@ chromedriver.log
 .errai/
 *.versionsBackup
 .settings/
-
+out/
+.project
+/ts2jsinterop/target/
+/target
