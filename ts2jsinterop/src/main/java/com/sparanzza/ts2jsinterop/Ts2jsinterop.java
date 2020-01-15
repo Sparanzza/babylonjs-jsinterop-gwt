@@ -7,101 +7,146 @@ import static com.sparanzza.ts2jsinterop.Constants.OPEN_PARENTHESIS;
 
 public class Ts2jsinterop {
 	
+	static STATE st = STATE.INIT;
+	static BufferedWriter bwLog = null;
+	
 	public static void main(String[] args) {
-		File file = new File(Ts2jsinterop.class.getClassLoader().getResource("babylon.module.d.ts").getFile());
+		File outLog = new File("log.txt");
 		
-		if (file.exists()) {
-			System.out.println("### Init file module.ts ###");
+		
+		File fileModuleTs = new File(Ts2jsinterop.class.getClassLoader().getResource("babylon.module.d.ts").getFile());
+		if (fileModuleTs.exists()) {
 			
-			System.out.println("Absolute Path: " + file.getAbsolutePath());
-			System.out.println("Is Directory: " + file.isDirectory());
-			System.out.println("Parent Path: " + file.getParent());
+			System.out.println("### Init fileModuleTs module.ts ###");
+			System.out.println("Absolute Path: " + fileModuleTs.getAbsolutePath());
+			System.out.println("Is Directory: " + fileModuleTs.isDirectory());
+			System.out.println("Parent Path: " + fileModuleTs.getParent());
 			
-			if (file.isFile()) {
-				System.out.println("File size: " + file.length());
-				System.out.println("File last modified " + file.lastModified());
+			if (fileModuleTs.isFile()) {
+				System.out.println("File size: " + fileModuleTs.length());
+				System.out.println("File last modified " + fileModuleTs.lastModified());
 			}
 			
 			try {
-				BufferedReader br = new BufferedReader(new FileReader(file));
-				String str;
-				boolean inComment = false;
-				while ((str = br.readLine()) != null && str.length() != 0) {
+				bwLog = new BufferedWriter(new FileWriter(outLog));
+				
+				BufferedReader br = new BufferedReader(new FileReader(fileModuleTs));
+				String line;
+				
+				while ((line = br.readLine()) != null && line.length() != 0) {
 					
+					if (isDeclareIndex(line, br)) continue;
 					// @formatter:off
-					if (str.contains("/**")) { inComment = true; continue; }
-					if (str.contains("*/")) { inComment = false; continue; }
+					if (line.contains("/**")) { st = STATE.COMMENT; continue; }
+					if (line.contains("*/")) { st = STATE.END_COMMENT; continue; }
 					// @formatter:on
+					if (st == STATE.COMMENT) continue;
 					
-					if (!inComment) {
-						if (isModule(str)) continue;
-						if (isImports(str)) continue;
-						if (isClass(str)) continue;
-						if (isInterface(str)) continue;
-						if (isMethod(str)) continue;
-						if (avoidCases(str)) continue;
-						isParam(str);
-					}
+					if (isModule(line)) continue;
+					if (isImports(line)) continue;
+					if (isClass(line)) continue;
+					if (isInterface(line)) continue;
+					if (isConstructor(line)) continue;
+					if (isMethod(line)) continue;
+					if (avoidCases(line)) continue;
+					isParam(line);
+					
 				}
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
 				e.printStackTrace();
+			} finally {
+				try {
+					// Close the writer regardless of what happens...
+					bwLog.close();
+				} catch (Exception e) {
+				}
 			}
 		}
 		
 	}
 	
-	private static boolean avoidCases(String str) {
-		if (str.trim().equals("}")) return true; // close statement
-		if (str.contains("export")) return true; // export module from index
+	private static boolean isConstructor(String line) throws IOException {
+		if (line.contains("import")) {
+			bwLog.write("# CONSTRUCTOR - " + line + "\n");
+			return true;
+		}
 		return false;
 	}
 	
-	private static boolean isImports(String str) {
-		boolean isFound;
-		if (isFound = str.contains("import")) {
-			System.out.println("#IMPORT - " + str);
+	private static boolean isDeclareIndex(String line, BufferedReader br) throws IOException {
+		if (line.contains("declare") && line.contains("/index")) {
+			bwLog.write("# OMMITED DECLARE INDEX - " + line + "\n");
+			
+			while ((line = br.readLine()) != null && line.length() != 0) {
+				bwLog.write("# OMMITED - " + line + "\n");
+				if (line.contains("}")) {
+					st = STATE.END_MODULE;
+					return true;
+				}
+			}
 		}
-		return isFound;
+		
+		return false;
 	}
 	
-	private static boolean isClass(String str) {
-		boolean isFound;
-		if (isFound = str.contains("Class") && !str.contains("(") ) {
-			System.out.println("#CLASS - " + str);
-		}
-		return isFound;
+	private static boolean avoidCases(String line) {
+		if (line.trim().equals("}")) return true; // close statement
+//		if (str.contains("export")) return true; // export module from index
+		return false;
 	}
 	
-	private static boolean isInterface(String str) {
-		boolean isFound;
-		if (isFound = str.contains("Interface")) {
-			System.out.println("#INTERFACE - " + str);
+	private static boolean isImports(String line) throws IOException {
+		if (line.contains("import")) {
+			bwLog.write("# IMPORT - " + line + "\n");
+			return true;
 		}
-		return isFound;
+		return false;
 	}
 	
-	private static boolean isParam(String str) {
-		System.out.println("#PARAM - " + str);
+	private static boolean isClass(String line) throws IOException {
+		if (line.contains("class") && line.contains("{")) {
+			bwLog.write("# CLASS - " + line + "\n");
+			return true;
+		}
+		return false;
+	}
+	
+	private static boolean isInterface(String line) throws IOException {
+		if (line.contains("interface")) {
+			bwLog.write("# INTERFACE - " + line + "\n");
+			return true;
+		}
+		return false;
+	}
+	
+	private static boolean isParam(String line) throws IOException {
+		bwLog.write("# PARAM - " + line + "\n");
 		return true;
 	}
 	
-	private static boolean isMethod(String str) {
-		boolean isFound;
-		if (isFound = (str.contains(OPEN_PARENTHESIS) && str.contains(CLOSE_PARENTHESIS))) {
-			System.out.println("#METHOD - " + str);
+	private static boolean isMethod(String line) throws IOException {
+		
+		if (line.contains(OPEN_PARENTHESIS) && line.contains(CLOSE_PARENTHESIS)) {
+			bwLog.write("# METHOD - " + line + "\n");
+			return true;
 		}
-		return isFound;
+		return false;
 	}
 	
-	private static boolean isModule(String str) {
-		boolean isFound;
-		if (isFound = str.contains("declare module")) {
-			System.out.println("#MODULE - " + str);
+	private static boolean isModule(String line) throws IOException {
+		if (line.contains("declare module")) {
+			bwLog.write("# MODULE - " + line + "\n");
+			return true;
 		}
-		return isFound;
+		return false;
+	}
+	
+	enum STATE {
+		INIT, COMMENT, END_COMMENT, DECLARE_MODULE, MODULE_INDEX, END_MODULE, CLASS, CONSTRUCTOR, ENDCLASS, INNERCLASS, METHOD, PARAM
 	}
 	
 }
+
 

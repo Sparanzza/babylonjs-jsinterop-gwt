@@ -13,6 +13,7 @@
     <artifactId>ts2jsinterop</artifactId>
 
     <dependencies><!--@formatter:off-->
+        <dependency><groupId>com.google.guava</groupId><artifactId>guava-gwt</artifactId><version>28.2-jre</version></dependency>
         <dependency><groupId>com.squareup</groupId><artifactId>javapoet</artifactId><version>1.10.0</version></dependency>
         <dependency><groupId>org.jboss.gwt.elemento</groupId><artifactId>elemento-core</artifactId><version>0.8.2-gwt2</version></dependency>
         <!-- Test dependencies -->
