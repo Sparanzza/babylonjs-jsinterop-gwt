@@ -14,3 +14,4 @@ out/
 .project
 /ts2jsinterop/target/
 /target
+/core/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst

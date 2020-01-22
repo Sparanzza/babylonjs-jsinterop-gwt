@@ -38,8 +38,11 @@ public class Ts2jsinterop {
 				String line;
 				BufferedReader br = new BufferedReader(new FileReader(fileModuleTs));
 				while ((line = br.readLine()) != null && line.length() != 0) {
+					System.out.println("STATE ... " + tb.state);
+					System.out.println("LINE ... " + line);
 					// @formatter:off
 					if (isDeclareIndex(line, br)) continue;
+					if (line.contains("/**") && line.contains("*/")) { tb.state = STATE.END_COMMENT; continue; }
 					if (line.contains("/**")) { tb.state = STATE.COMMENT; continue; }
 					if (line.contains("*/")) { tb.state = STATE.END_COMMENT; continue; }
 					if (tb.state == STATE.COMMENT) continue;
@@ -49,8 +52,8 @@ public class Ts2jsinterop {
 					if (isImports(line)) continue;
 					if (isClass(line)) continue;
 					if (isInterface(line)) continue;
-					if (isConstructor(line)) continue;
-					if (isMethod(line)) continue;
+					// if (isConstructor(line)) continue;
+					// if (isMethod(line)) continue;
 					if (avoidCases(line)) continue;
 					isParam(line);
 					
@@ -97,13 +100,12 @@ public class Ts2jsinterop {
 				}
 			}
 		}
-		
 		return false;
 	}
 	
 	private static boolean avoidCases(String line) {
 		if (line.trim().equals("}")) tb.changeState();
-		return false;
+		return true;
 	}
 	
 	private static boolean isImports(String line) {

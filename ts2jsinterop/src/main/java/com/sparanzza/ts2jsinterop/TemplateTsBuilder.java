@@ -1,9 +1,9 @@
 package com.sparanzza.ts2jsinterop;
 
+import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeSpec;
 import com.squareup.javapoet.TypeSpec.Builder;
-import com.sun.jdi.InterfaceType;
 
 import javax.lang.model.element.Modifier;
 import java.io.IOException;
@@ -15,6 +15,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 public class TemplateTsBuilder {
+	private final String pathBuild = "../core/src/main/java/";
+	private final String groupId = "com.sparanzza.";
 	
 	public static final String CLASSTRING = "class";
 	public static final String INTERFACESTRING = "interface";
@@ -47,20 +49,20 @@ public class TemplateTsBuilder {
 	}
 	
 	public boolean setClass(String line) {
+		state = STATE.CLASS;
 		tc = new TemplateClass();
 		AtomicReference<Integer> nParam = new AtomicReference<>(0);
 		Arrays.stream(line.trim().split(" ")).filter(filterClass).forEach(c -> {
 			// @formatter:off
+			System.out.println(c);
 					if (nParam.get() == 0 && c.equals("abstract")) { tc.isAbstract = true; return;}
 					if (nParam.get() == 0) tc.classTitle = c;
 					if (nParam.get() == 1 && c.equals("interface")) tc.isInterface = true;
 					if (nParam.get() == 2 ) {
-						Class myClass = null;
-						try { myClass = Class.forName(c);
-						} catch (ClassNotFoundException e) { e.printStackTrace(); }
-						if(myClass != null){
-							if (tc.isInterface) tc.interfaceTitles.add(myClass);
-							else { tc.classExtend = myClass; }
+						if(tc.isInterface){
+							tc.interfaceTitles.add(c);
+						}else{
+							tc.classExtend = ClassName.get("", c).getClass();
 						}
 					}
 			// @formatter:on
@@ -70,17 +72,19 @@ public class TemplateTsBuilder {
 	}
 	
 	public Builder buildClass() {
-		
 		state = STATE.CLASS;
 		builder = TypeSpec.classBuilder(tc.classTitle).addModifiers(Modifier.PUBLIC);
 		if (tc.isAbstract) { builder.addModifiers(Modifier.ABSTRACT);}
 		if (tc.isInterface) {
 			if (tc.interfaceTitles.size() > 0) {
-				tc.interfaceTitles.forEach( i -> builder.addSuperinterfaces(i));
+				tc.interfaceTitles.forEach(i -> builder.addSuperinterface(ClassName.get("", i)));
 			}
-		} else {
+		}
+		if (tc.classExtend != null) {
+			System.out.println("super class ... " + tc.classExtend.getCanonicalName());
 			builder.superclass(tc.classExtend);
 		}
+		return builder;
 	}
 	
 	public Builder buildInterface(String name) {
@@ -91,17 +95,27 @@ public class TemplateTsBuilder {
 	
 	public void writeJavaFile(String _path) throws IOException {
 		
-		JavaFile javaFile = JavaFile.builder(moduleTitle, builder.build()).build();
+		JavaFile javaFile = JavaFile.builder(cleanPackage(moduleTitle), builder.build()).build();
 		Path path = Paths.get(_path);
 		javaFile.writeTo(path);
 	}
 	
+	private String cleanPackage(String moduleTitle) {
+		int iLastSlash = moduleTitle.lastIndexOf("/");
+		return groupId + moduleTitle.substring(0, iLastSlash).replace("/", ".");
+	}
+	
 	public void changeState() {
-		if (state == STATE.CLASS) {
-			state = STATE.END_CLASS;
+		
+		if (state == STATE.CLASS || tc != null) {
+			
 			try {
+				System.out.println("Building Class ... " + tc.classTitle);
 				buildClass();
-				writeJavaFile("./");
+				System.out.println("writing file ... " + moduleTitle);
+				writeJavaFile(pathBuild);
+				tc = null;
+				state = STATE.END_CLASS;
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
@@ -120,7 +134,7 @@ public class TemplateTsBuilder {
 		public boolean isAbstract;
 		public boolean isInterface;
 		public String classTitle;
-		public List<InterfaceType> interfaceTitles;
+		public List<String> interfaceTitles;
 		public Class classExtend = null;
 	}
 }
