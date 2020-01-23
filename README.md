@@ -1,2 +1,2 @@
 # babylonjs-jsinterop-gwt
-Babylonjs jsinterop for GWT
+Babylonjs version 4.0.3 jsinterop for GWT
