@@ -14,6 +14,7 @@ public class Ts2jsinterop {
 	
 	private static ExportLog elog;
 	private static TemplateTsBuilder tb;
+	
 	public static void main(String[] args) {
 		
 		elog = new ExportLog("log.txt");
@@ -38,8 +39,7 @@ public class Ts2jsinterop {
 				String line;
 				BufferedReader br = new BufferedReader(new FileReader(fileModuleTs));
 				while ((line = br.readLine()) != null && line.length() != 0) {
-					System.out.println("STATE ... " + tb.state);
-					System.out.println("LINE ... " + line);
+					
 					// @formatter:off
 					if (isDeclareIndex(line, br)) continue;
 					if (line.contains("/**") && line.contains("*/")) { tb.state = STATE.END_COMMENT; continue; }
@@ -54,8 +54,11 @@ public class Ts2jsinterop {
 					if (isInterface(line)) continue;
 					// if (isConstructor(line)) continue;
 					// if (isMethod(line)) continue;
-					if (avoidCases(line)) continue;
-					isParam(line);
+					// isParam(line) continue;
+					
+					endStatement(line);
+					
+					System.out.println("STATE: " + tb.getState() + " line " + line);
 					
 				}
 				
@@ -81,6 +84,7 @@ public class Ts2jsinterop {
 		}
 		return false;
 	}
+	
 	private static boolean isConstructor(String line) {
 		if (line.contains("import")) {
 			elog.writeLog("# CONSTRUCTOR - " + line + "\n");
@@ -103,9 +107,8 @@ public class Ts2jsinterop {
 		return false;
 	}
 	
-	private static boolean avoidCases(String line) {
-		if (line.trim().equals("}")) tb.changeState();
-		return true;
+	private static void endStatement(String line) {
+		if (line.trim().equals("}")) tb.endStatement();
 	}
 	
 	private static boolean isImports(String line) {
@@ -118,8 +121,9 @@ public class Ts2jsinterop {
 	
 	
 	private static boolean isInterface(String line) {
-		if (line.contains("interface")) {
+		if (line.contains("interface") && !line.contains("<")) {
 			elog.writeLog("# INTERFACE - " + line + "\n");
+			tb.setInterface(line);
 			return true;
 		}
 		return false;

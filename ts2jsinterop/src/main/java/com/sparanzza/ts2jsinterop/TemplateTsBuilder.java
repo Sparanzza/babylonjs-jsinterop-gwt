@@ -10,31 +10,34 @@ import javax.lang.model.element.Modifier;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 public class TemplateTsBuilder {
-	private final String pathBuild = "../core/src/main/java/";
-	private final String groupId = "com.sparanzza.";
-	
 	public static final String CLASSTRING = "class";
 	public static final String INTERFACESTRING = "interface";
+	public static final String IMPLEMENTSSTRING = "implements";
 	public static final String EXTENDSTRING = "extend";
 	public static final String EXPORTSTRING = "export";
 	public static final String ABSTRACTSTRING = "abstract";
-	
+	public static STATE state;
+	private final String pathBuild = "../core/src/main/java/";
+	private final String groupId = "com.sparanzza.";
 	public String moduleTitle = "";
-	public STATE state;
 	public List<TemplateClass> innerClasses;
-	public TemplateClass tc;
+	public TemplateClass template;
+	
 	// Filters
 	Predicate<String> filterModule = c -> {
 		return !(c.contains("declare") || c.contains("module") || c.contains("{"));
 	};
 	Predicate<String> filterClass = c -> {
 		return !(c.contains("export") || c.contains("class") || c.contains("{"));
+	};
+	Predicate<String> filterInterface = c -> {
+		return !(c.contains("export") || c.contains("interface") || c.contains("{"));
 	};
 	private Builder builder;
 	
@@ -50,53 +53,76 @@ public class TemplateTsBuilder {
 	}
 	
 	public boolean setClass(String line) {
+		template = new TemplateClass();
 		state = STATE.CLASS;
-		tc = new TemplateClass();
-		AtomicReference<Integer> nParam = new AtomicReference<>(0);
-		Arrays.stream(line.trim().split(" ")).filter(filterClass)
-				.forEach(c -> {
-			// @formatter:off
-			System.out.println(c);
-					if (nParam.get() == 0 && c.equals("abstract")) { tc.isAbstract = true; return;}
-					if (nParam.get() == 0) tc.classTitle = c;
-					if (nParam.get() == 1 && c.equals("implements")) tc.isInterface = true;
-					if (nParam.get() == 2 ) {
-						if(tc.isInterface){
-							tc.interfaceTitles.add(c);
-						}else{
-							tc.classExtend = TypeVariableName.get(c);
-						}
-					}
-			// @formatter:on
-			nParam.set(nParam.get() + 1);
+		Arrays.stream(line.trim().split(" ")).filter(filterClass).peek(x -> System.out.println("word is " + x + " state is " + state)).forEach(c -> {
+			switch (c.trim()) {
+				case ABSTRACTSTRING:
+					template.isAbstract = true;
+					break;
+				case EXTENDSTRING:
+					state = STATE.EXTEND_CLASS;
+					break;
+				case IMPLEMENTSSTRING:
+					template.isInterface = true;
+					state = STATE.IMPLEMENTS;
+					break;
+				default:
+					if (state == STATE.CLASS) {template.clazzName = c;}
+					if (state == STATE.IMPLEMENTS) {template.interfaceTitles.add(c);}
+					if (state == STATE.EXTEND_CLASS) {template.classExtend = TypeVariableName.get(c);}
+			}
 		});
+		state = STATE.CLASS;
 		return true;
 	}
 	
-	public Builder buildClass() {
-		state = STATE.CLASS;
-		builder = TypeSpec.classBuilder(tc.classTitle).addModifiers(Modifier.PUBLIC);
-		if (tc.isAbstract) { builder.addModifiers(Modifier.ABSTRACT);}
-		if (tc.isInterface) {
-			if (tc.interfaceTitles.size() > 0) {
-				tc.interfaceTitles.forEach(i -> builder.addSuperinterface(ClassName.get("", i)));
+	public boolean setInterface(String line) {
+		template = new TemplateClass();
+		state = STATE.INTERFACE;
+		Arrays.stream(line.trim().split(" ")).filter(filterInterface).peek(x -> System.out.println("word is " + x + " state is " + state)).forEach(c -> {
+			switch (c.trim()) {
+				case ABSTRACTSTRING:
+					template.isAbstract = true;
+					break;
+				case EXTENDSTRING:
+					state = STATE.EXTEND_CLASS;
+					break;
+				default:
+					if (state == STATE.INTERFACE) {template.clazzName = c;}
+					if (state == STATE.EXTEND_CLASS) {template.classExtend = TypeVariableName.get(c);}
 			}
-		}
-		if (tc.classExtend != null) {
-			System.out.println("super class ... " + tc.classExtend.name);
-			builder.superclass(tc.classExtend);
-		}
-		return builder;
+		});
+		state = STATE.INTERFACE;
+		return true;
 	}
 	
-	public Builder buildInterface(String name) {
+	public void buildClass() {
+		state = STATE.CLASS;
+		builder = TypeSpec.classBuilder(template.clazzName).addModifiers(Modifier.PUBLIC);
+		if (template.isAbstract) { builder.addModifiers(Modifier.ABSTRACT);}
+		if (template.isInterface) {
+			System.out.println("is interface --------- " + template.isInterface + " " + template.interfaceTitles.toString());
+			for (String i : template.interfaceTitles) {
+				builder.addSuperinterface(ClassName.get("android.graphics.drawable", i));
+			}
+		}
+		if (template.classExtend != null) {
+			System.out.println("super class ... " + template.classExtend.name);
+			builder.superclass(template.classExtend);
+		}
+	}
+	
+	public void buildInterface() {
 		state = STATE.INTERFACE;
-		builder = TypeSpec.interfaceBuilder(name);
-		return builder;
+		builder = TypeSpec.interfaceBuilder(template.clazzName).addModifiers(Modifier.PUBLIC);
+		if (template.classExtend != null) {
+			System.out.println("super class ... " + template.classExtend.name);
+			builder.superclass(template.classExtend);
+		}
 	}
 	
 	public void writeJavaFile(String _path) throws IOException {
-		
 		JavaFile javaFile = JavaFile.builder(cleanPackage(moduleTitle), builder.build()).build();
 		Path path = Paths.get(_path);
 		javaFile.writeTo(path);
@@ -107,47 +133,49 @@ public class TemplateTsBuilder {
 		return groupId + moduleTitle.substring(0, iLastSlash).replace("/", ".");
 	}
 	
-	public void changeState() {
-		if (state == STATE.CLASS || tc != null) {
+	public boolean endStatement() {
+		if ((state == STATE.CLASS || state == STATE.INTERFACE) && template != null) {
 			try {
-				System.out.println("Building Class ... " + tc.classTitle);
-				buildClass();
+				System.out.println("Building " + state + " ... " + template.clazzName);
+				if (state == STATE.INTERFACE) {
+					state = STATE.END_INTERFACE;
+					buildInterface();
+				}
+				if (state == STATE.CLASS) {
+					state = STATE.END_CLASS;
+					buildClass();
+				}
 				System.out.println("writing file ... " + moduleTitle);
 				writeJavaFile(pathBuild);
-				tc = null;
-				state = STATE.END_CLASS;
+				template = null;
+				return true;
 			} catch (IOException e) {
 				e.printStackTrace();
+				return false;
 			}
 		}
-		if (state == STATE.END_CLASS) {
+		
+		if (state == STATE.END_CLASS || state == state.END_INTERFACE || state == state.END_COMMENT) {
 			state = STATE.END_MODULE;
-			return;
 		}
+		
+		return true;
+	}
+	
+	public STATE getState() {
+		return state;
 	}
 	
 	public static enum STATE {
-		INIT,
-		COMMENT,
-		END_COMMENT,
-		DECLARE_MODULE,
-		MODULE_INDEX,
-		END_MODULE,
-		CLASS,
-		END_CLASS,
-		INTERFACE,
-		END_INTERFACE,
-		CONSTRUCTOR,
-		INNERCLASS,
-		METHOD,
-		PARAM
+		INIT, COMMENT, END_COMMENT, DECLARE_MODULE, MODULE_INDEX, END_INTERFACE, END_MODULE, CLASS, EXTEND_CLASS, END_CLASS, IMPLEMENTS, INTERFACE, CONSTRUCTOR, INNERCLASS, METHOD, PARAM
 	}
 	
 	class TemplateClass {
 		public boolean isAbstract;
 		public boolean isInterface;
-		public String classTitle;
-		public List<String> interfaceTitles;
+		public String clazzName;
+		public List<String> interfaceTitles = new ArrayList<>();
 		public TypeVariableName classExtend = null;
 	}
+	
 }
