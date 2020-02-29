@@ -15,9 +15,9 @@ public class ExportLog {
 		initBuffered(outLog);
 	}
 	
-	public void writeLog(String line) {
+	public void writeLogLine(String line) {
 		try {
-			bw.write(line);
+			bw.write(line + "\n");
 		} catch (IOException e) {
 			e.printStackTrace();
 		}

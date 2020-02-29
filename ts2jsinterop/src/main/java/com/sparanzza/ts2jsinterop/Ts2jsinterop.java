@@ -1,11 +1,13 @@
 package com.sparanzza.ts2jsinterop;
 
+import com.google.common.base.CharMatcher;
 import com.sparanzza.ts2jsinterop.TemplateTsBuilder.STATE;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.Arrays;
 
 import static com.sparanzza.ts2jsinterop.Constants.CLOSE_PARENTHESIS;
 import static com.sparanzza.ts2jsinterop.Constants.OPEN_PARENTHESIS;
@@ -52,14 +54,12 @@ public class Ts2jsinterop {
 					if (isImports(line)) continue;
 					if (isClass(line)) continue;
 					if (isInterface(line)) continue;
-					// if (isConstructor(line)) continue;
+					if (isConstructor(line, br)) continue;
 					// if (isMethod(line)) continue;
 					// isParam(line) continue;
 					
 					endStatement(line);
-					
 					System.out.println("STATE: " + tb.getState() + " line " + line);
-					
 				}
 				
 				elog.closeLog();
@@ -71,7 +71,7 @@ public class Ts2jsinterop {
 	
 	private static boolean isModule(String line) {
 		if (line.contains("declare module")) {
-			elog.writeLog("# MODULE - " + line + "\n");
+			elog.writeLogLine("# MODULE - " + line);
 			return tb.setModule(line);
 		}
 		return false;
@@ -79,26 +79,60 @@ public class Ts2jsinterop {
 	
 	private static boolean isClass(String line) {
 		if (line.contains("class") && line.contains("{") && !line.contains("<")) {
-			elog.writeLog("# CLASS - " + line + "\n");
+			elog.writeLogLine("# CLASS - " + line);
 			return tb.setClass(line);
 		}
 		return false;
 	}
 	
-	private static boolean isConstructor(String line) {
-		if (line.contains("import")) {
-			elog.writeLog("# CONSTRUCTOR - " + line + "\n");
+	private static boolean isConstructor(String line, BufferedReader br) throws Exception {
+		
+		if (line.contains("constructor")) {
+			String paramsStr = "";
+			if (line.contains("constructor();")) { // empty constructor
+				paramsStr = "";
+			} else if (line.contains("constructor(") && line.contains(");")) { // one line
+				paramsStr = line.trim();
+			} else if (line.contains("constructor(") && !line.contains(");")) { // multi line
+				do {
+					if (!(line.contains("/**") || line.contains("*") || line.contains("*/"))) paramsStr = paramsStr + line.trim();
+				} while ((line = br.readLine()) != null && !line.contains(");"));
+				assert line != null;
+				paramsStr = paramsStr + line.trim();
+			}
+			// delete constructor word
+			if (paramsStr != "") {
+				paramsStr = CharMatcher.whitespace().removeFrom(paramsStr);
+				int s = paramsStr.indexOf("constructor(");
+				int e = paramsStr.indexOf(");");
+				//
+				// System.out.println("start " + s + " end " + e);
+				paramsStr = paramsStr.substring(s + 12, paramsStr.length() - 2);
+				paramsStr = paramsStr.replaceAll("\\?", "");
+				paramsStr = paramsStr.replaceAll("\\*/", ""); // some line mix param with end comments
+				// Split params by , character
+				tb.setConstructor(Arrays.asList(paramsStr.split(",")));
+				
+			}else{
+				// empty constructor
+				tb.setConstructor(null);
+			}
+			// For now replace optional parameters in constructor
+			elog.writeLogLine("# CONSTRUCTOR PARAMS OTHER LINE - " + paramsStr);
+			
+			
 			return true;
+		} else {
+			return false;
 		}
-		return false;
 	}
 	
 	private static boolean isDeclareIndex(String line, BufferedReader br) throws IOException {
 		if (line.contains("declare") && line.contains("/index")) {
-			elog.writeLog("# OMMITED DECLARE INDEX - " + line + "\n");
+			elog.writeLogLine("# OMMITED DECLARE INDEX - " + line + "\n");
 			
 			while ((line = br.readLine()) != null && line.length() != 0) {
-				elog.writeLog("# OMMITED - " + line + "\n");
+				elog.writeLogLine("# OMMITED - " + line);
 				if (line.contains("}")) {
 					return true;
 				}
@@ -108,12 +142,12 @@ public class Ts2jsinterop {
 	}
 	
 	private static void endStatement(String line) {
-		if (line.trim().equals("}")) tb.endStatement();
+		if (line.trim().equals("}")) tb.endStatement(); elog.writeLogLine("End Statement " + tb.getState());
 	}
 	
 	private static boolean isImports(String line) {
 		if (line.contains("import")) {
-			elog.writeLog("# IMPORT - " + line + "\n");
+			elog.writeLogLine("# IMPORT - " + line);
 			return true;
 		}
 		return false;
@@ -122,7 +156,7 @@ public class Ts2jsinterop {
 	
 	private static boolean isInterface(String line) {
 		if (line.contains("interface") && !line.contains("<")) {
-			elog.writeLog("# INTERFACE - " + line + "\n");
+			elog.writeLogLine("# INTERFACE - " + line);
 			tb.setInterface(line);
 			return true;
 		}
@@ -130,13 +164,13 @@ public class Ts2jsinterop {
 	}
 	
 	private static void isParam(String line) {
-		elog.writeLog("# PARAM - " + line + "\n");
+		elog.writeLogLine("# PARAM - " + line);
 	}
 	
 	private static boolean isMethod(String line) {
 		
 		if (line.contains(OPEN_PARENTHESIS) && line.contains(CLOSE_PARENTHESIS)) {
-			elog.writeLog("# METHOD - " + line + "\n");
+			elog.writeLogLine("# METHOD - " + line);
 			return true;
 		}
 		return false;

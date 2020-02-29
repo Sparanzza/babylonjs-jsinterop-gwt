@@ -1,10 +1,7 @@
 package com.sparanzza.ts2jsinterop;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.JavaFile;
-import com.squareup.javapoet.TypeSpec;
+import com.squareup.javapoet.*;
 import com.squareup.javapoet.TypeSpec.Builder;
-import com.squareup.javapoet.TypeVariableName;
 
 import javax.lang.model.element.Modifier;
 import java.io.IOException;
@@ -22,6 +19,8 @@ public class TemplateTsBuilder {
 	public static final String EXTENDSTRING = "extend";
 	public static final String EXPORTSTRING = "export";
 	public static final String ABSTRACTSTRING = "abstract";
+	public static final String MODULESTRING = "module";
+	public static final String DECLARESTRING = "declare";
 	public static STATE state;
 	private final String pathBuild = "../core/src/main/java/";
 	private final String groupId = "com.sparanzza.";
@@ -31,24 +30,48 @@ public class TemplateTsBuilder {
 	
 	// Filters
 	Predicate<String> filterModule = c -> {
-		return !(c.contains("declare") || c.contains("module") || c.contains("{"));
+		return !(c.contains(DECLARESTRING) || c.contains(MODULESTRING) || c.contains("{"));
 	};
 	Predicate<String> filterClass = c -> {
-		return !(c.contains("export") || c.contains("class") || c.contains("{"));
+		return !(c.contains(EXPORTSTRING) || c.contains(CLASSTRING) || c.contains("{"));
 	};
 	Predicate<String> filterInterface = c -> {
-		return !(c.contains("export") || c.contains("interface") || c.contains("{"));
+		return !(c.contains(EXPORTSTRING) || c.contains(INTERFACESTRING) || c.contains("{"));
 	};
 	private Builder builder;
 	
 	public TemplateTsBuilder() { state = STATE.INIT;}
 	
+	public static TypeName getClazz(String clazz) {
+		switch (clazz) {
+			case "number":
+				return ClassName.FLOAT;
+			case "string":
+				return ClassName.get(String.class);
+			case "boolean":
+				return ClassName.BOOLEAN;
+			case "Object":
+				return ClassName.OBJECT;
+			case "any":
+				return ClassName.OBJECT;
+			case "undefined":
+				return null;
+			case "null":
+				return null;
+			default:
+				return ClassName.get("", clazz);
+			
+		}
+	}
+	
 	public boolean setModule(String t) {
+		System.out.println("setModule " + t);
 		state = STATE.DECLARE_MODULE;
 		Long result = Arrays.stream(t.trim().split(" ")).filter(filterModule).map(c -> {
 			moduleTitle = c.replace("\"", "");
 			return moduleTitle;
 		}).count();
+		
 		return result == 1;
 	}
 	
@@ -77,7 +100,7 @@ public class TemplateTsBuilder {
 		return true;
 	}
 	
-	public boolean setInterface(String line) {
+	public void setInterface(String line) {
 		template = new TemplateClass();
 		state = STATE.INTERFACE;
 		Arrays.stream(line.trim().split(" ")).filter(filterInterface).peek(x -> System.out.println("word is " + x + " state is " + state)).forEach(c -> {
@@ -94,13 +117,22 @@ public class TemplateTsBuilder {
 			}
 		});
 		state = STATE.INTERFACE;
-		return true;
+	}
+	
+	public void setConstructor(List<String> params) {
+		MethodSpec.Builder constructorBuilder = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
+		if (params != null) params.stream().map(e -> e.split(":")).forEach(param -> {
+			System.out.println("param " + param[1] + " - " + param[0]);
+			constructorBuilder.addParameter(getClazz(param[1]), param[0]);
+		}); template.constructor = constructorBuilder.build();
 	}
 	
 	public void buildClass() {
 		state = STATE.CLASS;
 		builder = TypeSpec.classBuilder(template.clazzName).addModifiers(Modifier.PUBLIC);
-		if (template.isAbstract) { builder.addModifiers(Modifier.ABSTRACT);}
+		if (template.isAbstract) {
+			builder.addModifiers(Modifier.ABSTRACT);
+		}
 		if (template.isInterface) {
 			System.out.println("is interface --------- " + template.isInterface + " " + template.interfaceTitles.toString());
 			for (String i : template.interfaceTitles) {
@@ -111,6 +143,8 @@ public class TemplateTsBuilder {
 			System.out.println("super class ... " + template.classExtend.name);
 			builder.superclass(template.classExtend);
 		}
+		if (template.constructor != null) builder.addMethod(template.constructor);
+		
 	}
 	
 	public void buildInterface() {
@@ -176,6 +210,7 @@ public class TemplateTsBuilder {
 		public String clazzName;
 		public List<String> interfaceTitles = new ArrayList<>();
 		public TypeVariableName classExtend = null;
+		public MethodSpec constructor = null;
 	}
 	
 }
