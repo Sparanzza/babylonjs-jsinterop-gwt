@@ -1,21 +1,24 @@
 package com.sparanzza.ts2jsinterop;
 
 import com.google.common.base.CharMatcher;
-import com.sparanzza.ts2jsinterop.TemplateTsBuilder.STATE;
+import com.sparanzza.ts2jsinterop.BuilderProcessor.STATE;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
-import static com.sparanzza.ts2jsinterop.Constants.CLOSE_PARENTHESIS;
 import static com.sparanzza.ts2jsinterop.Constants.OPEN_PARENTHESIS;
 
 public class Ts2jsinterop {
 	
 	private static ExportLog elog;
-	private static TemplateTsBuilder tb;
+	private static BuilderProcessor tb;
 	
 	public static void main(String[] args) {
 		
@@ -25,7 +28,7 @@ public class Ts2jsinterop {
 		
 		if (fileModuleTs.exists()) {
 			
-			tb = new TemplateTsBuilder();
+			tb = new BuilderProcessor();
 			
 			System.out.println("### Init fileModuleTs module.ts ###");
 			System.out.println("Absolute Path: " + fileModuleTs.getAbsolutePath());
@@ -55,8 +58,8 @@ public class Ts2jsinterop {
 					if (isClass(line)) continue;
 					if (isInterface(line)) continue;
 					if (isConstructor(line, br)) continue;
-					// if (isMethod(line)) continue;
-					// isParam(line) continue;
+					if (isMethod(line, br)) continue;
+					// isParam(line);
 					
 					endStatement(line);
 					System.out.println("STATE: " + tb.getState() + " line " + line);
@@ -78,7 +81,7 @@ public class Ts2jsinterop {
 	}
 	
 	private static boolean isClass(String line) {
-		if (line.contains("class") && line.contains("{") && !line.contains("<")) {
+		if (line.contains("class") && line.contains("{")) {
 			elog.writeLogLine("# CLASS - " + line);
 			return tb.setClass(line);
 		}
@@ -113,7 +116,7 @@ public class Ts2jsinterop {
 				// Split params by , character
 				tb.setConstructor(Arrays.asList(paramsStr.split(",")));
 				
-			}else{
+			} else {
 				// empty constructor
 				tb.setConstructor(null);
 			}
@@ -142,7 +145,8 @@ public class Ts2jsinterop {
 	}
 	
 	private static void endStatement(String line) {
-		if (line.trim().equals("}")) tb.endStatement(); elog.writeLogLine("End Statement " + tb.getState());
+		if (line.trim().equals("}")) tb.endStatement();
+		elog.writeLogLine("End Statement " + tb.getState());
 	}
 	
 	private static boolean isImports(String line) {
@@ -155,25 +159,45 @@ public class Ts2jsinterop {
 	
 	
 	private static boolean isInterface(String line) {
-		if (line.contains("interface") && !line.contains("<")) {
+		if (line.contains("interface")) {
 			elog.writeLogLine("# INTERFACE - " + line);
 			tb.setInterface(line);
 			return true;
 		}
+		
 		return false;
 	}
 	
 	private static void isParam(String line) {
 		elog.writeLogLine("# PARAM - " + line);
+		tb.setParam(line);
 	}
 	
-	private static boolean isMethod(String line) {
-		
-		if (line.contains(OPEN_PARENTHESIS) && line.contains(CLOSE_PARENTHESIS)) {
-			elog.writeLogLine("# METHOD - " + line);
-			return true;
+	private static boolean isMethod(String line, BufferedReader br) {
+		if (line.contains("<") ) return false;
+		if (line.contains("():")) { // method without function
+			List<String> arr = Arrays.stream(line.replaceAll("():", " ").split(" ")).collect(Collectors.toList());// 0: method return 1: name 2: static /
+			// private ...
+			tb.setMethod(arr, null); // no params
+		} else {
+			if (line.contains(OPEN_PARENTHESIS) && line.contains("):") && line.contains(";")) { //  method one line
+				// line
+				elog.writeLogLine("# METHOD - " + line);
+				// tb.setMethod(line, null);
+				
+			} else if (line.contains(OPEN_PARENTHESIS)) { // multiline
+				// need get all params
+				
+			}
 		}
+		
 		return false;
+	}
+	
+	@SuppressWarnings("unchecked")
+	static <T> Stream<T> reverse(Stream<T> input) {
+		Object[] temp = input.toArray();
+		return (Stream<T>) IntStream.range(0, temp.length).mapToObj(i -> temp[temp.length - i - 1]);
 	}
 }
 
