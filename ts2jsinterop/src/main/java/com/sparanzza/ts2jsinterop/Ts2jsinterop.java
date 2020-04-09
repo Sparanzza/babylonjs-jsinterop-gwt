@@ -1,24 +1,23 @@
 package com.sparanzza.ts2jsinterop;
 
 import com.google.common.base.CharMatcher;
-import com.sparanzza.ts2jsinterop.BuilderProcessor.STATE;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
-import static com.sparanzza.ts2jsinterop.Constants.OPEN_PARENTHESIS;
+import static com.sparanzza.ts2jsinterop.Constants.*;
+import static com.sparanzza.ts2jsinterop.SetTemplateData.STATE;
+import static com.sparanzza.ts2jsinterop.SetTemplateData.state;
 
 public class Ts2jsinterop {
 	
 	private static ExportLog elog;
-	private static BuilderProcessor tb;
+	private static SetTemplateData td;
+	private static BufferedReader br;
 	
 	public static void main(String[] args) {
 		
@@ -28,7 +27,7 @@ public class Ts2jsinterop {
 		
 		if (fileModuleTs.exists()) {
 			
-			tb = new BuilderProcessor();
+			td = new SetTemplateData();
 			
 			System.out.println("### Init fileModuleTs module.ts ###");
 			System.out.println("Absolute Path: " + fileModuleTs.getAbsolutePath());
@@ -42,27 +41,22 @@ public class Ts2jsinterop {
 			
 			try {
 				String line;
-				BufferedReader br = new BufferedReader(new FileReader(fileModuleTs));
+				br = new BufferedReader(new FileReader(fileModuleTs));
 				while ((line = br.readLine()) != null && line.length() != 0) {
-					
-					// @formatter:off
-					if (isDeclareIndex(line, br)) continue;
-					if (line.contains("/**") && line.contains("*/")) { tb.state = STATE.END_COMMENT; continue; }
-					if (line.contains("/**")) { tb.state = STATE.COMMENT; continue; }
-					if (line.contains("*/")) { tb.state = STATE.END_COMMENT; continue; }
-					if (tb.state == STATE.COMMENT) continue;
-					// @formatter:on
-					
+					line = scapeComments(line);
+					if (isDeclareIndex(line)) continue;
 					if (isModule(line)) continue;
 					if (isImports(line)) continue;
 					if (isClass(line)) continue;
+					if (isEnum(line)) continue;
 					if (isInterface(line)) continue;
-					if (isConstructor(line, br)) continue;
-					if (isMethod(line, br)) continue;
+					if (isConstructor(line)) continue;
+					// if (isMethod(line, br)) continue;
+					if (isType(line)) continue;
 					// isParam(line);
 					
 					endStatement(line);
-					System.out.println("STATE: " + tb.getState() + " line " + line);
+					System.out.println("STATE: " + td.getState() + " line " + line);
 				}
 				
 				elog.closeLog();
@@ -72,25 +66,67 @@ public class Ts2jsinterop {
 		}
 	}
 	
+	private static boolean isType(String line) throws IOException {
+		if (line.contains(TYPESTRING)) {
+			if (!line.contains(";")) return true; // one line
+			state = STATE.TYPE;
+			if (!line.contains(CLOSE_KEY)) {
+				do {
+					line = scapeComments(line);
+				} while ((line = br.readLine()) != null && !line.contains(CLOSE_KEY));
+			} else {}
+			state = STATE.END_TYPE;
+			return true;
+		}
+		return false;
+	}
+	
+	private static String scapeComments(String line) throws IOException {
+		do {
+			// @formatter:off
+			if (line.contains("/**") && line.contains("*/")) { state = STATE.END_COMMENT; continue; }
+			if (line.contains("/**")) { state = STATE.COMMENT; continue; }
+			if (line.contains("*/")) { state = STATE.END_COMMENT; }
+			if (state != STATE.END_COMMENT && state != STATE.COMMENT) break;
+			// @formatter:on
+		} while ((line = br.readLine()) != null && state != STATE.END_COMMENT && state == STATE.COMMENT);
+		return line;
+	}
+	
+	private static boolean isEnum(String line) throws IOException {
+		if (line.contains(ENUMSTRING) && line.contains(OPEN_KEY)) {
+			elog.writeLogLine("# ENUM - " + line);
+			Optional<String> name = Arrays.stream(line.trim().split(" ")).filter(s -> !s.contains(EXPORTSTRING) && !s.contains(ENUMSTRING) && !s.contains(OPEN_KEY)).findFirst();
+			List<String> enumerates = new ArrayList<>();
+			while ((line = br.readLine()) != null && !line.trim().equals(CLOSE_KEY)) {
+				scapeComments(line);
+				enumerates.add(Arrays.asList(line.split("=")).get(0).replaceAll(";", "").trim());
+			}
+			return td.setEnum(name, enumerates);
+		}
+		return false;
+	}
+	
 	private static boolean isModule(String line) {
 		if (line.contains("declare module")) {
 			elog.writeLogLine("# MODULE - " + line);
-			return tb.setModule(line);
+			return td.setModule(line);
 		}
 		return false;
 	}
 	
 	private static boolean isClass(String line) {
-		if (line.contains("class") && line.contains("{")) {
+		if (line.contains(CLASSTRING) && line.contains(OPEN_KEY)) {
+			state = STATE.CLASS;
 			elog.writeLogLine("# CLASS - " + line);
-			return tb.setClass(line);
+			return td.setClass(line);
 		}
 		return false;
 	}
 	
-	private static boolean isConstructor(String line, BufferedReader br) throws Exception {
-		
-		if (line.contains("constructor")) {
+	private static boolean isConstructor(String line) throws Exception {
+		if (line.contains(CONSTRUCTORSTRING)) {
+			state = STATE.CONSTRUCTOR;
 			String paramsStr = "";
 			if (line.contains("constructor();")) { // empty constructor
 				paramsStr = "";
@@ -98,10 +134,9 @@ public class Ts2jsinterop {
 				paramsStr = line.trim();
 			} else if (line.contains("constructor(") && !line.contains(");")) { // multi line
 				do {
-					if (!(line.contains("/**") || line.contains("*") || line.contains("*/"))) paramsStr = paramsStr + line.trim();
-				} while ((line = br.readLine()) != null && !line.contains(");"));
-				assert line != null;
-				paramsStr = paramsStr + line.trim();
+					line = scapeComments(line);
+					paramsStr = paramsStr + line.trim();
+				} while ((line = br.readLine()) != null && !paramsStr.contains(");"));
 			}
 			// delete constructor word
 			if (paramsStr != "") {
@@ -114,23 +149,21 @@ public class Ts2jsinterop {
 				paramsStr = paramsStr.replaceAll("\\?", "");
 				paramsStr = paramsStr.replaceAll("\\*/", ""); // some line mix param with end comments
 				// Split params by , character
-				tb.setConstructor(Arrays.asList(paramsStr.split(",")));
-				
+				td.setConstructor(Arrays.asList(paramsStr.split(",")));
 			} else {
-				// empty constructor
-				tb.setConstructor(null);
+				td.setConstructor(Collections.EMPTY_LIST); // empty constructor
 			}
 			// For now replace optional parameters in constructor
 			elog.writeLogLine("# CONSTRUCTOR PARAMS OTHER LINE - " + paramsStr);
-			
-			
+			state = STATE.END_CONSTRUCTOR;
 			return true;
+			
 		} else {
 			return false;
 		}
 	}
 	
-	private static boolean isDeclareIndex(String line, BufferedReader br) throws IOException {
+	private static boolean isDeclareIndex(String line) throws IOException {
 		if (line.contains("declare") && line.contains("/index")) {
 			elog.writeLogLine("# OMMITED DECLARE INDEX - " + line + "\n");
 			
@@ -145,8 +178,8 @@ public class Ts2jsinterop {
 	}
 	
 	private static void endStatement(String line) {
-		if (line.trim().equals("}")) tb.endStatement();
-		elog.writeLogLine("End Statement " + tb.getState());
+		if (line.trim().equals("}")) td.endStatement();
+		elog.writeLogLine("End Statement " + td.getState());
 	}
 	
 	private static boolean isImports(String line) {
@@ -157,28 +190,26 @@ public class Ts2jsinterop {
 		return false;
 	}
 	
-	
 	private static boolean isInterface(String line) {
 		if (line.contains("interface")) {
 			elog.writeLogLine("# INTERFACE - " + line);
-			tb.setInterface(line);
+			td.setInterface(line);
 			return true;
 		}
-		
 		return false;
 	}
 	
 	private static void isParam(String line) {
 		elog.writeLogLine("# PARAM - " + line);
-		tb.setParam(line);
+		td.setParam(line);
 	}
 	
 	private static boolean isMethod(String line, BufferedReader br) {
-		if (line.contains("<") ) return false;
+		if (line.contains("<")) return false;
 		if (line.contains("():")) { // method without function
 			List<String> arr = Arrays.stream(line.replaceAll("():", " ").split(" ")).collect(Collectors.toList());// 0: method return 1: name 2: static /
 			// private ...
-			tb.setMethod(arr, null); // no params
+			td.setMethod(arr, null); // no params
 		} else {
 			if (line.contains(OPEN_PARENTHESIS) && line.contains("):") && line.contains(";")) { //  method one line
 				// line
@@ -187,18 +218,11 @@ public class Ts2jsinterop {
 				
 			} else if (line.contains(OPEN_PARENTHESIS)) { // multiline
 				// need get all params
-				
 			}
 		}
-		
 		return false;
 	}
 	
-	@SuppressWarnings("unchecked")
-	static <T> Stream<T> reverse(Stream<T> input) {
-		Object[] temp = input.toArray();
-		return (Stream<T>) IntStream.range(0, temp.length).mapToObj(i -> temp[temp.length - i - 1]);
-	}
 }
 
 

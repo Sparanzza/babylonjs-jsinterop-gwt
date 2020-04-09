@@ -10,11 +10,14 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import static com.sparanzza.ts2jsinterop.Constants.*;
 
-public class BuilderProcessor {
+public class SetTemplateData {
 	public static STATE state;
 	public String moduleScope = "";
 	public TemplateBuilder t;
@@ -30,7 +33,31 @@ public class BuilderProcessor {
 	
 	// @formatter:on
 	
-	public BuilderProcessor() { state = STATE.INIT;}
+	public SetTemplateData() {
+		state = STATE.INIT;
+		t = new TemplateBuilder();
+	}
+	
+	public static TypeName getClazzType(String clazz) {
+		switch (clazz) {
+			case "number":
+				ClassName.get(Number.class);
+			case "string":
+				return ClassName.get(String.class);
+			case "boolean":
+				return ClassName.BOOLEAN;
+			case "Object":
+				return ClassName.OBJECT;
+			case "any":
+				return ClassName.OBJECT;
+			case "undefined":
+				return null;
+			case "null":
+				return null;
+			default:
+				return ClassName.get("", clazz);
+		}
+	}
 	
 	public boolean setModule(String t) {
 		System.out.println("setModule " + t);
@@ -85,11 +112,11 @@ public class BuilderProcessor {
 		// https://square.github.io/javapoet/1.x/javapoet/com/squareup/javapoet/TypeVariableName.html#get-java.lang.String-com.squareup.javapoet.TypeName...-
 		if (line.contains("<") && line.contains(">")) {
 			if (line.contains("<T>")) {
-				t.typeGenericsParam = new String[]{"T"};
+				t.clazz.pClazz.genType = "T";
 				return line.replaceAll("<T>", "");
 			} else {
 				String genericPArameters = line.substring(line.indexOf("<"), line.lastIndexOf(">"));
-				t.typeGenericsParam = genericPArameters.split(" ");
+				genericPArameters.split(" ");
 				// get clean class withouth generic parameters
 				return line.substring(0, line.indexOf("<"));
 			}
@@ -99,7 +126,6 @@ public class BuilderProcessor {
 	}
 	
 	public void buildClass() {
-		state = STATE.CLASS;
 		builder = TypeSpec.classBuilder(t.clazz.pClazz.name).addModifiers(Modifier.PUBLIC);
 		if (t.isAbstract) {
 			builder.addModifiers(Modifier.ABSTRACT);
@@ -109,19 +135,17 @@ public class BuilderProcessor {
 				builder.addSuperinterface(ClassName.get("android.graphics.drawable", i.name));
 			}
 		}
-		if (t.classExtend != null) {
-			builder.superclass(TypeVariableName.get(c));
+		if (t.clazz.pExtend != null) {
+			builder.superclass(TypeVariableName.get(t.clazz.pExtend.name));
 		}
 		
 		// https://stackoverflow.com/questions/29117410/how-to-add-the-any-type-questionmark-in-javapoet
-		if (t.typeGenericsParam != null) {
-			if (t.typeGenericsParam[0].equals("T")) {
-				builder.addTypeVariable(TypeVariableName.get(t.typeGenericsParam[0]));
-			} else {
-				builder.addTypeVariable(TypeVariableName.get(t.typeGenericsParam[0]));
-			}
+		if (t.clazz.pClazz.genType != "") {
+			builder.addTypeVariable(TypeVariableName.get(t.clazz.pClazz.genType));
 		}
-		if (t.constructor != null) builder.addMethod(t.constructor);
+		
+		builder.addMethods(t.buildConstructorList());
+		state = STATE.END_CLASS;
 	}
 	
 	public void setInterface(String line) {
@@ -131,7 +155,7 @@ public class BuilderProcessor {
 		state = STATE.INTERFACE;
 		
 		t = new TemplateBuilder();
-		Arrays.stream(line.trim().split(" ")).filter(filterInterface).peek(x -> System.out.println("word is " + x + " state is " + state)).forEach(c -> {
+		Arrays.stream(line.trim().split(" ")).filter(filterInterface).forEach(c -> {
 			switch (c.trim()) {
 				case ABSTRACTSTRING:
 					t.isAbstract = true;
@@ -140,29 +164,31 @@ public class BuilderProcessor {
 					state = STATE.EXTEND_CLASS;
 					break;
 				default:
-					if (state == STATE.INTERFACE) {t.clazzName = c;}
-					if (state == STATE.EXTEND_CLASS) {t.classExtend = TypeVariableName.get(c);}
+					if (state == STATE.INTERFACE) {t.clazz.pClazz.name += c;}
+					if (state == STATE.EXTEND_CLASS) {t.clazz.pExtend.name = c;}
 			}
 		});
 		state = STATE.INTERFACE;
 	}
 	
 	public void setConstructor(List<String> params) {
-		MethodSpec.Builder constructorBuilder = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
-		if (params != null) params.stream().map(e -> e.split(":")).forEach(param -> {
-			System.out.println("param " + param[1] + " - " + param[0]);
-			constructorBuilder.addParameter(getClazz(param[1]), param[0]);
-		});
-		t.constructor = constructorBuilder.build();
+		Map<String, TypeName> mapParams = params.stream().map(p -> p.split(":")).collect(Collectors.toMap(e -> e[0], e -> getClazzType(e[1])));
+		t.addConstructor(mapParams);
 	}
 	
 	public void buildInterface() {
 		state = STATE.INTERFACE;
-		builder = TypeSpec.interfaceBuilder(t.clazzName).addModifiers(Modifier.PUBLIC);
-		if (t.classExtend != null) {
-			System.out.println("super class ... " + t.classExtend.name);
-			builder.superclass(t.classExtend);
+		builder = TypeSpec.interfaceBuilder(t.clazz.pClazz.name).addModifiers(Modifier.PUBLIC);
+		if (t.clazz.pExtend != null) {
+			System.out.println("super class ... " + t.clazz.pClazz.name);
+			builder.superclass(TypeVariableName.get(t.clazz.pClazz.name));
 		}
+	}
+	
+	public boolean setEnum(Optional<String> name, List<String> enumerates) {
+		state = STATE.ENUM;
+		builder.addType(t.enumBuild(name.get(), enumerates));
+		return false;
 	}
 	
 	public void writeJavaFile(String _path) throws IOException {
@@ -177,7 +203,9 @@ public class BuilderProcessor {
 	}
 	
 	public boolean endStatement() {
-		if (insideClassOrInterface && t != null) {
+		if (state == STATE.END_CLASS) return false;
+		System.out.println(t.toString());
+		if (insideClassOrInterface && t.clazz != null) {
 			try {
 				System.out.println("Building " + state + " ... " + t.clazz.pClazz.name);
 				if (buildInterface) {
@@ -189,6 +217,9 @@ public class BuilderProcessor {
 					state = STATE.END_CLASS;
 					buildClass = false;
 					buildClass();
+				} else if (state == STATE.ENUM) {
+					state = STATE.END_ENUM;
+					// TODO IN REFACTOR
 				}
 				System.out.println("writing file ... " + moduleScope);
 				writeJavaFile(PATH_BUILD);
@@ -225,6 +256,10 @@ public class BuilderProcessor {
 		INIT,
 		COMMENT,
 		END_COMMENT,
+		ENUM,
+		END_ENUM,
+		TYPE,
+		END_TYPE,
 		DECLARE_MODULE,
 		MODULE_INDEX,
 		END_INTERFACE,
@@ -236,9 +271,10 @@ public class BuilderProcessor {
 		IMPLEMENTS,
 		INTERFACE,
 		CONSTRUCTOR,
+		END_CONSTRUCTOR,
 		INNERCLASS,
 		METHOD,
-		PARAM
+		PARAM;
 	}
 	// @formatter:on
 }
